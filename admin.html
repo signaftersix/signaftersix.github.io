@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow">
+  <title>Admin | Sign After Six</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/styles.css"><link rel="stylesheet" href="assets/admin.css">
+</head>
+<body class="admin-body">
+  <header class="admin-header"><div class="wrap"><a class="brand" href="index.html"><span><strong>Sign After Six</strong><small>Admin</small></span></a><button id="signOut" class="admin-ghost hidden">Sign out</button></div></header>
+  <main class="wrap admin-main">
+    <section id="loginPanel" class="admin-login">
+      <div class="eyebrow">Private dashboard</div><h1>Admin sign-in</h1>
+      <p>Use the authorized Google business account, then complete the second-factor challenge. Customer files and appointment actions should never be accessible from a public link alone.</p>
+      <button id="googleLogin" class="btn btn-primary">Continue with Google</button>
+      <p class="tiny-note">This screen is wired for Supabase Google OAuth + TOTP MFA after credentials are added.</p>
+    </section>
+    <section id="mfaPanel" class="admin-login hidden">
+      <div class="eyebrow">Second step</div><h1>Verify it’s you</h1>
+      <p>Admin access requires a second factor even after the authorized Google account signs in.</p>
+      <div id="mfaSetup"></div>
+      <button id="enrollMfa" class="btn btn-secondary">Set up authenticator</button>
+      <label id="mfaCodeWrap" class="hidden">6-digit authenticator code<input id="mfaCode" inputmode="numeric" maxlength="6" autocomplete="one-time-code"></label>
+      <button id="verifyMfa" class="btn btn-primary hidden">Verify code</button>
+      <p id="mfaMessage" class="tiny-note"></p>
+    </section>
+    <section id="dashboard" class="hidden">
+      <div class="admin-title"><div><div class="eyebrow">Operations</div><h1>Today at a glance</h1></div><button class="btn btn-secondary">Block availability</button></div>
+      <div class="admin-stat-grid"><article><span>Pending</span><strong id="pendingCount">0</strong></article><article><span>Confirmed</span><strong id="confirmedCount">0</strong></article><article><span>Awaiting payment</span><strong id="paymentCount">0</strong></article><article><span>Today</span><strong id="todayCount">0</strong></article></div>
+      <div class="admin-grid">
+        <section class="admin-card"><div class="admin-card-head"><h2>Requests</h2><select id="statusFilter"><option>All</option><option>Pending</option><option>Approved</option><option>Declined</option><option>Expired</option></select></div><div id="requestList" class="request-list"><p class="empty-state">Connect Supabase to load live requests.</p></div></section>
+        <aside class="admin-card"><h2>Selected request</h2><div id="requestDetail" class="empty-state">Choose a request to review the document, quote, customer comments, and appointment details.</div></aside>
+      </div>
+      <section class="admin-card audit-card"><div class="admin-card-head"><h2>Audit log</h2><span>Timestamped admin actions</span></div><div id="auditLog" class="empty-state">No live audit events until the backend is connected.</div></section>
+    </section>
+  </main>
+  <script src="config.js"></script><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="assets/admin.js"></script>
+</body></html>
