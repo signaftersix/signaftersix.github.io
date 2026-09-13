@@ -7,6 +7,6 @@ window.SAS_CONFIG = {
   MAPBOX_PUBLIC_TOKEN: "",
   API_BASE_URL: "https://sawmgfzkrhiepzyymwwr.supabase.co/functions/v1",
   BUSINESS_PHONE_DISPLAY: "",
-  ENABLE_LIVE_SUBMISSION: false,
+  ENABLE_LIVE_SUBMISSION: true,
   ENABLE_MAPBOX_ROUTING: false
 };
