@@ -109,11 +109,12 @@
       <h3>Customer comments</h3><p>${esc(r.customer_comments||'None')}</p>
       <label>Reviewed quote<input id="reviewedQuote" type="number" min="0" step="0.01" value="${Number(r.quote_total).toFixed(2)}"${isConfirmed||isCompleted?' disabled':''}></label>
       <label>Optional response/comment<textarea id="adminComment" rows="3"></textarea></label>
+      ${isCompleted ? '' : `
       <div class="admin-actions">
-        <button id="approveBtn" class="btn btn-primary"${isConfirmed||isCompleted?' disabled':''}>Approve</button>
-        <button id="declineBtn" class="btn btn-secondary"${isCompleted?' disabled':''}>Decline</button>
+        <button id="approveBtn" class="btn btn-primary"${isConfirmed?' disabled':''}>Approve</button>
+        <button id="declineBtn" class="btn btn-secondary">Decline</button>
         ${completeButtonHtml}
-      </div>
+      </div>`}
       ${completionNoteHtml}
       <p id="actionMessage" class="tiny-note">${suggested==='approve'?'Approval link opened. Review everything before confirming.':suggested==='decline'?'Decline link opened. Review before confirming.':''}</p>`;
 
