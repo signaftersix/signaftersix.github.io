@@ -199,8 +199,9 @@
                 <label class="check-card"><input type="checkbox" id="emergencyOpening" name="emergencyOpening" /><span><strong>Request an emergency opening</strong><small>Use this if the day looks full. Normal same-day pricing still applies.</small></span></label>
               </div>
               <label>Service address
-                <input id="address" name="address" autocomplete="street-address" placeholder="Street address, city, FL ZIP" />
+                <input id="address" name="address" autocomplete="street-address" placeholder="Street address, city, FL ZIP" required />
                 <small>Your exact address is used for routing only and is never shown publicly.</small>
+                <small id="routeMessage" role="alert" aria-live="polite"></small>
               </label>
               <label>Apartment / unit / building <span class="optional">optional</span>
                 <input id="unit" name="unit" autocomplete="address-line2" />
