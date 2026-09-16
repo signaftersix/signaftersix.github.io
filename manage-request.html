@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer">
+  <title>Manage Request | Sign After Six</title>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+  <header class="site-header"><div class="wrap nav-wrap"><a class="brand" href="index.html"><span><strong>Sign After Six</strong><small>Mobile Notary</small></span></a></div></header>
+  <main id="main" class="section"><div class="wrap" style="max-width:760px">
+    <div class="eyebrow">Private request management</div><h1>Manage your appointment request</h1>
+    <p id="manageMessage">Loading your request...</p>
+    <section id="managePanel" class="wizard-shell hidden">
+      <div id="requestSummary"></div>
+      <hr>
+      <h2>Request a different time</h2>
+      <p>Your current appointment stays in place until the new time is approved.</p>
+      <div class="field-grid two"><label>Requested date<input id="newDate" type="date"></label><label>Requested time<input id="newTime" type="time" step="1800"></label></div>
+      <label>Reason or helpful details <span class="optional">optional</span><textarea id="rescheduleReason" rows="3"></textarea></label>
+      <button id="rescheduleBtn" class="btn btn-secondary">Request Reschedule</button>
+      <hr>
+      <h2>Request cancellation</h2>
+      <p>Cancellations require review. Fees already earned for short-notice travel or a no-show may be nonrefundable under the booking policy.</p>
+      <label>Reason <span class="optional">optional</span><textarea id="cancelReason" rows="3"></textarea></label>
+      <button id="cancelBtn" class="btn btn-secondary">Request Cancellation</button>
+      <p id="actionResult" class="tiny-note" aria-live="polite"></p>
+    </section>
+  </div></main>
+  <script src="config.js"></script><script src="assets/manage-request.js"></script>
+</body></html>

@@ -26,10 +26,10 @@
       <p id="mfaMessage" class="tiny-note"></p>
     </section>
     <section id="dashboard" class="hidden">
-      <div class="admin-title"><div><div class="eyebrow">Operations</div><h1>Today at a glance</h1></div><button class="btn btn-secondary">Block availability</button></div>
+      <div class="admin-title"><div><div class="eyebrow">Operations</div><h1>Today at a glance</h1></div><button id="blockAvailabilityBtn" class="btn btn-secondary">Block availability</button></div>
       <div class="admin-stat-grid"><article><span>Pending</span><strong id="pendingCount">0</strong></article><article><span>Confirmed</span><strong id="confirmedCount">0</strong></article><article><span>Awaiting payment</span><strong id="paymentCount">0</strong></article><article><span>Today</span><strong id="todayCount">0</strong></article></div>
       <div class="admin-grid">
-        <section class="admin-card"><div class="admin-card-head"><h2>Requests</h2><select id="statusFilter"><option>All</option><option>Pending</option><option>Approved</option><option>Declined</option><option>Expired</option></select></div><div id="requestList" class="request-list"><p class="empty-state">Connect Supabase to load live requests.</p></div></section>
+        <section class="admin-card"><div class="admin-card-head"><h2>Requests</h2><select id="statusFilter"><option value="all">All statuses</option><option value="pending">Pending</option><option value="revised_quote">Revised Quote</option><option value="awaiting_payment">Awaiting Payment</option><option value="confirmed">Confirmed</option><option value="cancel_requested">Cancel Requested</option><option value="reschedule_requested">Reschedule Requested</option><option value="completed">Completed</option><option value="declined">Declined</option><option value="expired">Expired</option><option value="cancelled">Cancelled</option></select></div><div id="requestList" class="request-list"><p class="empty-state">Connect Supabase to load live requests.</p></div></section>
         <aside class="admin-card"><h2>Selected request</h2><div id="requestDetail" class="empty-state">Choose a request to review the document, quote, customer comments, and appointment details.</div></aside>
       </div>
       <section class="admin-card audit-card"><div class="admin-card-head"><h2>Audit log</h2><span>Timestamped admin actions</span></div><div id="auditLog" class="empty-state">No live audit events until the backend is connected.</div></section>

@@ -4,9 +4,8 @@ window.SAS_CONFIG = {
   // Google OAuth client secrets, or SMS provider secrets in this file.
   SUPABASE_URL: "https://sawmgfzkrhiepzyymwwr.supabase.co",
   SUPABASE_ANON_KEY: "sb_publishable_APuCHwcrK53scrCQIZamXA_bvClS_YN",
-  MAPBOX_PUBLIC_TOKEN: "",
   API_BASE_URL: "https://sawmgfzkrhiepzyymwwr.supabase.co/functions/v1",
   BUSINESS_PHONE_DISPLAY: "",
   ENABLE_LIVE_SUBMISSION: true,
-  ENABLE_MAPBOX_ROUTING: false
+  ENABLE_SECURE_ROUTING: true
 };

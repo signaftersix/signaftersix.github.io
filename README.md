@@ -22,7 +22,7 @@ Mobile-first GitHub Pages website and booking-system scaffold for **Sign After S
 - Supabase schema with RLS, private document bucket, quote revisions, availability blocks, and audit log.
 - Edge-function scaffolds for request creation, Gmail notifications, Google Calendar holds, Square payment links, Square payment webhook, Telnyx SMS, and seven-day document cleanup.
 - GitHub Pages deployment workflow.
-- Draft privacy and booking-terms pages.
+- Final privacy and booking-terms pages.
 
 ## Important architecture choice
 
@@ -78,15 +78,14 @@ Copy `config.example.js` to `config.js` (already included in demo form) and add 
 window.SAS_CONFIG = {
   SUPABASE_URL: "https://YOUR_PROJECT.supabase.co",
   SUPABASE_ANON_KEY: "YOUR_PUBLIC_ANON_KEY",
-  MAPBOX_PUBLIC_TOKEN: "pk....",
   API_BASE_URL: "https://YOUR_PROJECT.supabase.co/functions/v1",
   BUSINESS_PHONE_DISPLAY: "",
   ENABLE_LIVE_SUBMISSION: true,
-  ENABLE_MAPBOX_ROUTING: true
+  ENABLE_SECURE_ROUTING: true
 };
 ```
 
-The Supabase anon key and a properly restricted Mapbox public token are meant for client use. **Do not put a Supabase service-role key or private provider token here.**
+The Supabase publishable key is meant for client use. Mapbox routing now runs only in an Edge Function; never place its token or the private business starting point in browser code. **Do not put a Supabase service-role key or private provider token here.**
 
 ## 4. Supabase secrets
 
@@ -106,6 +105,9 @@ SQUARE_LOCATION_ID
 SQUARE_WEBHOOK_SIGNATURE_KEY
 TELNYX_API_KEY
 TELNYX_FROM_NUMBER
+MAPBOX_ACCESS_TOKEN
+BUSINESS_BASE_LATITUDE
+BUSINESS_BASE_LONGITUDE
 ```
 
 The Google refresh token must have the Gmail send scope and the Google Calendar scopes actually needed by the functions. Do not request broader Google scopes than necessary.
@@ -150,7 +152,7 @@ Telnyx is scaffolded for low-volume transactional SMS. Register the sender prope
 
 ## 9. Mapbox
 
-Mapbox is used only when `ENABLE_MAPBOX_ROUTING` is true. The calculator uses the route's **one-way driving mileage** for pricing and the route duration for calendar blocking.
+Mapbox is used only when `ENABLE_SECURE_ROUTING` is true. The browser calls the private `route-service-address` Edge Function, and the calculator uses the route's **one-way driving mileage** for pricing and the route duration for calendar blocking.
 
 The public service-area map itself uses Leaflet + OpenStreetMap and shows only the ZIP-area base, never a private street address.
 

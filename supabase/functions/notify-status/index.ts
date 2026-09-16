@@ -1,44 +1,719 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { corsHeaders } from '../_shared/cors.ts';
-Deno.serve(async(req)=>{
-  if(req.method==='OPTIONS')return new Response('ok',{headers:corsHeaders});
-  try{
-    const {requestId,event,comment,acceptanceToken}=await req.json();
-    const sb=createClient(Deno.env.get('SUPABASE_URL')!,Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
-    const {data:r,error}=await sb.from('appointment_requests').select('*').eq('id',requestId).single();if(error)throw error;
-    if(event==='new_request'){
-      await sendGmail(Deno.env.get('BUSINESS_EMAIL')!,`New pending notary request • ${r.customer_name}`,adminEmail(r));
-    } else {
-      await sendGmail(r.customer_email,customerSubject(event),customerEmail(r,event,comment,acceptanceToken));
-      if(['approved','declined','payment_due','reminder_24h','reminder_2h','expired','confirmed','revised_quote'].includes(event)) await sendSms(r.customer_phone,smsText(r,event));
+import { createClient } from "npm:@supabase/supabase-js@2";
+
+const SITE_URL = "https://signaftersix.github.io";
+
+
+Deno.serve(async (req) => {
+  if (req.method !== "POST") {
+    return response(
+      {
+        error: "Method not allowed",
+      },
+      405,
+    );
+  }
+
+
+  try {
+    const supabaseUrl =
+      Deno.env.get(
+        "SUPABASE_URL",
+      );
+
+    const serviceRoleKey =
+      Deno.env.get(
+        "SUPABASE_SERVICE_ROLE_KEY",
+      );
+
+    const mailerUrl =
+      Deno.env.get(
+        "MAILER_WEB_APP_URL",
+      );
+
+    const mailerSecret =
+      Deno.env.get(
+        "MAILER_SHARED_SECRET",
+      );
+
+
+    if (
+      !supabaseUrl ||
+      !serviceRoleKey ||
+      !mailerUrl ||
+      !mailerSecret
+    ) {
+      throw new Error(
+        "Mailer configuration is incomplete.",
+      );
     }
-    return json({ok:true});
-  }catch(e){return json({error:e?.message||'Notification failed'},400)}
+
+
+    /*
+     * Only other trusted backend functions
+     * may call notify-status.
+     */
+    const authHeader =
+      req.headers.get(
+        "authorization",
+      ) || "";
+
+
+    if (
+      authHeader !==
+      `Bearer ${serviceRoleKey}`
+    ) {
+      return response(
+        {
+          error: "Unauthorized",
+        },
+        401,
+      );
+    }
+
+
+    const body =
+      await req.json();
+
+
+    const requestId =
+      String(
+        body.requestId ||
+        "",
+      );
+
+
+    const event =
+      String(
+        body.event ||
+        "new_request",
+      );
+
+
+    if (!requestId) {
+      throw new Error(
+        "Missing requestId.",
+      );
+    }
+
+
+    /*
+     * Supported email events.
+     *
+     * payment_confirmed is NEW.
+     */
+    const supportedEvents =
+      new Set([
+        "new_request",
+        "customer_request_received",
+        "revised_quote",
+        "payment_requested",
+        "payment_confirmed",
+        "cancellation_requested",
+        "cancellation_approved",
+        "cancellation_denied",
+        "reschedule_requested",
+        "reschedule_approved",
+        "reschedule_denied",
+      ]);
+
+
+    if (
+      !supportedEvents.has(
+        event,
+      )
+    ) {
+      throw new Error(
+        `Unsupported notification event: ${event}`,
+      );
+    }
+
+
+    const supabase =
+      createClient(
+        supabaseUrl,
+        serviceRoleKey,
+        {
+          auth: {
+            persistSession: false,
+          },
+        },
+      );
+
+
+    /*
+     * GET APPOINTMENT REQUEST
+     */
+    const {
+      data: requestRow,
+      error: requestError,
+    } =
+      await supabase
+        .from(
+          "appointment_requests",
+        )
+        .select("*")
+        .eq(
+          "id",
+          requestId,
+        )
+        .single();
+
+
+    if (
+      requestError ||
+      !requestRow
+    ) {
+      throw (
+        requestError ||
+        new Error(
+          "Request not found.",
+        )
+      );
+    }
+
+
+    /*
+     * FORMAT APPOINTMENT DATE/TIME
+     */
+    const appointmentDate =
+      new Date(
+        requestRow.appointment_at,
+      );
+
+
+    const appointmentDisplay =
+      new Intl.DateTimeFormat(
+        "en-US",
+        {
+          timeZone:
+            "America/New_York",
+
+          weekday:
+            "long",
+
+          month:
+            "long",
+
+          day:
+            "numeric",
+
+          year:
+            "numeric",
+
+          hour:
+            "numeric",
+
+          minute:
+            "2-digit",
+        },
+      ).format(
+        appointmentDate,
+      );
+
+
+    /*
+     * ADDRESS
+     */
+    const addressParts = [
+      requestRow.service_address,
+      requestRow.service_unit,
+      requestRow.service_zip,
+    ].filter(Boolean);
+
+
+    const address =
+      addressParts.join(
+        ", ",
+      );
+
+
+    /*
+     * DISTANCE
+     */
+    const distanceDisplay =
+      requestRow.one_way_miles != null
+
+        ? `${Number(
+            requestRow.one_way_miles,
+          ).toFixed(1)} miles one way`
+
+        : "Pending calculation";
+
+
+    /*
+     * BASE PAYLOAD USED BY ALL
+     * EMAIL TYPES
+     */
+    const mailPayload: any = {
+      secret:
+        mailerSecret,
+
+      event,
+
+      payload: {
+        request: {
+          id:
+            requestId,
+
+          appointmentAt:
+            requestRow
+              .appointment_at,
+
+          appointmentDisplay,
+
+          address,
+
+          distanceDisplay,
+
+          documentType:
+            requestRow
+              .document_type,
+
+          notarialAct:
+            requestRow
+              .notarial_act,
+
+          signerCount:
+            requestRow
+              .signer_count,
+
+          actCount:
+            requestRow
+              .act_count,
+
+          actsUnknown:
+            requestRow
+              .acts_unknown,
+
+          comments:
+            requestRow
+              .customer_comments,
+
+          emergencyOpening:
+            requestRow
+              .emergency_opening,
+        },
+
+
+        customer: {
+          name:
+            requestRow
+              .customer_name,
+
+          email:
+            requestRow
+              .customer_email,
+
+          phone:
+            requestRow
+              .customer_phone,
+        },
+
+
+        quote: {
+          total:
+            Number(
+              requestRow
+                .quote_total,
+            ),
+
+          lines:
+            requestRow
+              .quote_breakdown ||
+            [],
+        },
+      },
+    };
+
+    if (body.managementToken) {
+      mailPayload.payload.manageUrl = `${SITE_URL}/manage-request.html?request=${encodeURIComponent(requestId)}&token=${encodeURIComponent(String(body.managementToken))}`;
+    }
+    if (body.acceptanceUrl) mailPayload.payload.acceptanceUrl = String(body.acceptanceUrl);
+
+    if (requestRow.requested_appointment_at) {
+      mailPayload.payload.request.requestedAppointmentAt = requestRow.requested_appointment_at;
+      mailPayload.payload.request.requestedAppointmentDisplay = new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/New_York", weekday: "long", month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit",
+      }).format(new Date(requestRow.requested_appointment_at));
+    }
+
+
+    /*
+     * NEW REQUEST EMAIL
+     *
+     * Generate temporary signed URLs
+     * for uploaded documents.
+     */
+    if (
+      event ===
+      "new_request"
+    ) {
+      const {
+        data: documentRows,
+        error: documentError,
+      } =
+        await supabase
+          .from(
+            "request_documents",
+          )
+          .select("*")
+          .eq(
+            "request_id",
+            requestId,
+          );
+
+
+      if (documentError) {
+        throw documentError;
+      }
+
+
+      const documents = [];
+
+
+      for (
+        const doc of
+        documentRows || []
+      ) {
+        const {
+          data: signed,
+          error: signedError,
+        } =
+          await supabase
+            .storage
+            .from(
+              "notary-documents",
+            )
+            .createSignedUrl(
+              doc.storage_path,
+
+              /*
+               * Secure document link
+               * expires after one hour.
+               */
+              60 * 60,
+            );
+
+
+        documents.push({
+          name:
+            doc.original_name,
+
+          url:
+            signedError
+              ? null
+              : (
+                  signed
+                    ?.signedUrl ||
+                  null
+                ),
+        });
+      }
+
+
+      mailPayload
+        .payload
+        .documents =
+          documents;
+
+
+      mailPayload
+        .payload
+        .approveUrl =
+          `${SITE_URL}/admin.html` +
+          `?request=${encodeURIComponent(
+            requestId,
+          )}` +
+          `&action=approve`;
+
+
+      mailPayload
+        .payload
+        .declineUrl =
+          `${SITE_URL}/admin.html` +
+          `?request=${encodeURIComponent(
+            requestId,
+          )}` +
+          `&action=decline`;
+    }
+
+    if (event === "customer_request_received" && !mailPayload.payload.manageUrl) {
+      throw new Error("Customer management URL is missing.");
+    }
+
+
+    /*
+     * PAYMENT REQUESTED EMAIL
+     *
+     * Includes the Square payment link
+     * and payment deadline.
+     */
+    if (
+      event ===
+      "payment_requested"
+    ) {
+      if (
+        !requestRow
+          .square_payment_link_url
+      ) {
+        throw new Error(
+          "Square payment link is missing.",
+        );
+      }
+
+
+      let dueDisplay =
+        "";
+
+
+      if (
+        requestRow
+          .payment_due_at
+      ) {
+        dueDisplay =
+          new Intl.DateTimeFormat(
+            "en-US",
+            {
+              timeZone:
+                "America/New_York",
+
+              weekday:
+                "long",
+
+              month:
+                "long",
+
+              day:
+                "numeric",
+
+              hour:
+                "numeric",
+
+              minute:
+                "2-digit",
+            },
+          ).format(
+            new Date(
+              requestRow
+                .payment_due_at,
+            ),
+          );
+      }
+
+
+      mailPayload
+        .payload
+        .payment = {
+          url:
+            requestRow
+              .square_payment_link_url,
+
+          dueAt:
+            requestRow
+              .payment_due_at,
+
+          dueDisplay,
+
+          status:
+            requestRow
+              .payment_status ||
+            "unpaid",
+        };
+    }
+
+
+    /*
+     * PAYMENT CONFIRMED EMAIL
+     *
+     * NEW:
+     * This is sent after Square reports
+     * the payment as COMPLETED.
+     */
+    if (
+      event ===
+      "payment_confirmed"
+    ) {
+      mailPayload
+        .payload
+        .payment = {
+          status:
+            requestRow
+              .payment_status ||
+            "paid",
+
+          amount:
+            Number(
+              requestRow
+                .quote_total ||
+              0,
+            ),
+        };
+    }
+
+
+    /*
+     * SEND TO GOOGLE APPS SCRIPT
+     */
+    const mailResponse =
+      await fetch(
+        mailerUrl,
+        {
+          method:
+            "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+
+          body:
+            JSON.stringify(
+              mailPayload,
+            ),
+        },
+      );
+
+
+    const mailText =
+      await mailResponse
+        .text();
+
+
+    let mailResult:
+      any;
+
+
+    try {
+      mailResult =
+        JSON.parse(
+          mailText,
+        );
+
+    } catch {
+      mailResult = {
+        ok: false,
+        raw: mailText,
+      };
+    }
+
+
+    if (
+      !mailResponse.ok ||
+      !mailResult.ok
+    ) {
+      console.error(
+        "Mailer failed:",
+        mailResult,
+      );
+
+
+      throw new Error(
+        mailResult.error ||
+        "Google Apps Script mailer failed.",
+      );
+    }
+
+
+    /*
+     * AUDIT LOG
+     *
+     * Both payment_requested and
+     * payment_confirmed go to the customer.
+     *
+     * new_request goes to the business.
+     */
+    const recipient =
+      event ===
+        "payment_requested" ||
+      event === "payment_confirmed" ||
+      event === "customer_request_received" ||
+      event.startsWith("cancellation_") ||
+      event.startsWith("reschedule_")
+
+        ? requestRow
+            .customer_email
+
+        : "signaftersix@gmail.com";
+
+
+    const {
+      error: auditError,
+    } =
+      await supabase
+        .from(
+          "audit_log",
+        )
+        .insert({
+          request_id:
+            requestId,
+
+          action:
+            "notification_sent",
+
+          details: {
+            event,
+
+            channel:
+              "email",
+
+            recipient,
+          },
+        });
+
+
+    if (auditError) {
+      console.error(
+        "Notification audit log failed:",
+        auditError,
+      );
+    }
+
+
+    return response({
+      ok: true,
+      event,
+      requestId,
+    });
+
+
+  } catch (error) {
+    console.error(
+      error,
+    );
+
+
+    return response(
+      {
+        error:
+          error instanceof Error
+
+            ? error.message
+
+            : "Notification failed.",
+      },
+
+      400,
+    );
+  }
 });
 
-async function sendGmail(to:string,subject:string,html:string){
-  // Gmail API OAuth refresh token must be stored as Supabase secrets, never in GitHub.
-  const token=await googleAccessToken();
-  const fromName='Sign After Six Mobile Notary';
-  const raw=[`From: ${fromName} <${Deno.env.get('BUSINESS_EMAIL')}>`,`To: ${to}`,`Subject: ${subject}`,'MIME-Version: 1.0','Content-Type: text/html; charset=UTF-8','',html].join('\r\n');
-  const encoded=btoa(unescape(encodeURIComponent(raw))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
-  const res=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({raw:encoded})});
-  if(!res.ok)throw new Error(`Gmail send failed: ${await res.text()}`);
+
+function response(
+  body: unknown,
+  status = 200,
+) {
+  return new Response(
+    JSON.stringify(
+      body,
+    ),
+
+    {
+      status,
+
+      headers: {
+        "Content-Type":
+          "application/json",
+      },
+    },
+  );
 }
-async function googleAccessToken(){
-  const body=new URLSearchParams({client_id:Deno.env.get('GOOGLE_CLIENT_ID')!,client_secret:Deno.env.get('GOOGLE_CLIENT_SECRET')!,refresh_token:Deno.env.get('GOOGLE_REFRESH_TOKEN')!,grant_type:'refresh_token'});
-  const res=await fetch('https://oauth2.googleapis.com/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});const j=await res.json();if(!res.ok)throw new Error('Google OAuth refresh failed');return j.access_token;
-}
-async function sendSms(to:string,text:string){
-  const key=Deno.env.get('TELNYX_API_KEY'),from=Deno.env.get('TELNYX_FROM_NUMBER');if(!key||!from)return;
-  await fetch('https://api.telnyx.com/v2/messages',{method:'POST',headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify({from,to,text})});
-}
-function adminEmail(r:any){
-  const url=`${Deno.env.get('PUBLIC_SITE_ORIGIN')}/admin.html?request=${r.id}`;
-  return `<h2>New pending request</h2><p><b>${esc(r.customer_name)}</b> • ${esc(r.customer_phone)} • ${esc(r.customer_email)}</p><p>${new Date(r.appointment_at).toLocaleString('en-US',{timeZone:'America/New_York'})}<br>${esc(r.service_address)}</p><p>${esc(r.document_type)} • Estimated total: $${Number(r.quote_total).toFixed(2)}</p><p>Use the secure dashboard to review uploads and decide:</p><p><a href="${url}&action=approve">Review / Approve</a> &nbsp; <a href="${url}&action=decline">Review / Decline</a></p><p>Both links require authorized Google sign-in and MFA before any action can be completed.</p>`;
-}
-function customerSubject(e:string){return ({approved:'Appointment approved',declined:'Appointment request declined',payment_due:'Payment needed to confirm your appointment',expired:'Appointment request expired',reminder_24h:'Notary appointment tomorrow',reminder_2h:'Notary appointment in 2 hours',confirmed:'Appointment confirmed',revised_quote:'Your quote was revised'} as any)[e]||'Sign After Six update'}
-function customerEmail(r:any,e:string,c?:string,token?:string){const revise=(e==='revised_quote'&&token)?`<p>The reviewed quote is <b>$${Number(r.quote_total).toFixed(2)}</b>. You have 2 hours to accept it.</p><p><a href="${Deno.env.get('PUBLIC_SITE_ORIGIN')}/quote-review.html?request=${encodeURIComponent(r.id)}&token=${encodeURIComponent(token)}">Review revised quote</a></p>`:'';return `<h2>${customerSubject(e)}</h2><p>Hi ${esc(r.customer_name)},</p><p>Your Sign After Six request status is <b>${esc(e.replace('_',' '))}</b>.</p>${c?`<p>Note: ${esc(c)}</p>`:''}${revise}${r.square_payment_link_url&&e==='payment_due'?`<p><a href="${r.square_payment_link_url}">Pay securely with Square</a></p>`:''}<p>Appointment: ${new Date(r.appointment_at).toLocaleString('en-US',{timeZone:'America/New_York'})}</p>`}
-function smsText(r:any,e:string){return `Sign After Six: ${customerSubject(e)}. Check your email for details.`}
-function esc(s:any){return String(s??'').replace(/[&<>"']/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'} as any)[c])}
-function json(x:any,s=200){return new Response(JSON.stringify(x),{status:s,headers:{...corsHeaders,'Content-Type':'application/json'}})}

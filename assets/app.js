@@ -171,18 +171,14 @@
 
   async function routeAddress(){
     liveMiles=null;liveTravelSeconds=null;
-    if(!CONFIG.ENABLE_MAPBOX_ROUTING||!CONFIG.MAPBOX_PUBLIC_TOKEN||!$('address').value.trim()){renderQuote();return}
+    if(!CONFIG.ENABLE_SECURE_ROUTING||!CONFIG.API_BASE_URL||!$('address').value.trim()){renderQuote();return}
     try{
-      const q=encodeURIComponent($('address').value.trim());
-      const geocode=await fetch(`https://api.mapbox.com/search/geocode/v6/forward?q=${q}&country=US&proximity=${BASE.lng},${BASE.lat}&access_token=${CONFIG.MAPBOX_PUBLIC_TOKEN}`);
-      const gj=await geocode.json(); const f=gj.features?.[0]; if(!f)throw new Error('Address not found');
-      const [lng,lat]=f.geometry.coordinates;
-      const route=await fetch(`https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${BASE.lng},${BASE.lat};${lng},${lat}?overview=false&access_token=${CONFIG.MAPBOX_PUBLIC_TOKEN}`);
-      const rj=await route.json(); const r=rj.routes?.[0]; if(!r)throw new Error('Route unavailable');
-      liveMiles=r.distance/1609.344;liveTravelSeconds=r.duration;
+      const response=await fetch(`${CONFIG.API_BASE_URL}/route-service-address`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({address:$('address').value.trim()})});
+      const result=await response.json();if(!response.ok)throw new Error(result.error||'Route unavailable');
+      liveMiles=Number(result.miles);liveTravelSeconds=Number(result.travelSeconds);
       $('manualMilesWrap').classList.add('hidden');
       if(liveMiles>75){alert('This address is more than 75 driving miles from the service base. Online appointment requests are limited to 75 miles.');}
-    }catch(e){console.warn(e);$('manualMilesWrap').classList.remove('hidden');}
+    }catch(e){console.warn(e);$('manualMilesWrap').classList.add('hidden');$('quoteStatus').textContent=e.message;}
     renderQuote();
   }
 
@@ -229,6 +225,7 @@
   async function submitRequest(e){
     e.preventDefault(); if(!validateCurrentStep()||!$('consent').checked){$('consent').reportValidity();return}
     const q=calculateQuote();
+    if(CONFIG.ENABLE_SECURE_ROUTING&&(!Number.isFinite(liveMiles)||!Number.isFinite(liveTravelSeconds))){$('submitMessage').classList.remove('hidden');$('submitMessage').textContent='Please wait for the service address and travel time to be verified before submitting.';await routeAddress();return}
     if(q.miles>75){alert('Online requests are limited to 75 driving miles from the service base.');return}
     const payload={
       customer:{name:$('customerName').value,email:$('email').value,phone:$('phone').value,preferredContact:$('preferredContact').value,referral:$('referral').value},
