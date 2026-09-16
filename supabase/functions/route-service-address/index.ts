@@ -49,6 +49,15 @@ Deno.serve(async (req) => {
       return reply({ error: "That Florida address could not be located. Check it and try again.", code: "ADDRESS_NOT_FOUND" }, 422, origin);
     }
 
+    const regionCode = String(
+      feature?.properties?.context?.region?.region_code ||
+      feature?.properties?.context?.region?.region_code_full ||
+      "",
+    ).toUpperCase();
+    if (regionCode !== "FL" && regionCode !== "US-FL") {
+      return reply({ error: "Online requests are limited to service addresses in Florida.", code: "OUTSIDE_FLORIDA" }, 422, origin);
+    }
+
     const destinationLng = Number(coordinates[0]);
     const destinationLat = Number(coordinates[1]);
     const routeUrl = `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${baseLng},${baseLat};${destinationLng},${destinationLat}?overview=false&alternatives=false&access_token=${encodeURIComponent(token)}`;

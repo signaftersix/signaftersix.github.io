@@ -35,6 +35,8 @@
   let step = 1;
   let liveMiles = null;
   let liveTravelSeconds = null;
+  let lastRoutedAddress = '';
+  let routeError = '';
 
   document.querySelector('.menu-btn')?.addEventListener('click', (e) => {
     const nav = $('site-nav');
@@ -171,15 +173,26 @@
 
   async function routeAddress(){
     liveMiles=null;liveTravelSeconds=null;
-    if(!CONFIG.ENABLE_SECURE_ROUTING||!CONFIG.API_BASE_URL||!$('address').value.trim()){renderQuote();return}
+    lastRoutedAddress='';routeError='';
+    const address=$('address').value.trim();
+    $('routeMessage').textContent=address?'Checking address and driving distance…':'';
+    if(!CONFIG.ENABLE_SECURE_ROUTING||!CONFIG.API_BASE_URL||!address){renderQuote();return !address?false:true}
     try{
-      const response=await fetch(`${CONFIG.API_BASE_URL}/route-service-address`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({address:$('address').value.trim()})});
+      const response=await fetch(`${CONFIG.API_BASE_URL}/route-service-address`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({address})});
       const result=await response.json();if(!response.ok)throw new Error(result.error||'Route unavailable');
       liveMiles=Number(result.miles);liveTravelSeconds=Number(result.travelSeconds);
+      if(!Number.isFinite(liveMiles)||!Number.isFinite(liveTravelSeconds))throw new Error('Driving distance could not be verified.');
+      lastRoutedAddress=address;
       $('manualMilesWrap').classList.add('hidden');
-      if(liveMiles>75){alert('This address is more than 75 driving miles from the service base. Online appointment requests are limited to 75 miles.');}
-    }catch(e){console.warn(e);$('manualMilesWrap').classList.add('hidden');$('quoteStatus').textContent=e.message;}
-    renderQuote();
+      $('routeMessage').textContent=`Verified: ${liveMiles.toFixed(1)} one-way driving miles.`;
+      renderQuote();
+      return true;
+    }catch(e){
+      console.warn(e);routeError=e instanceof Error?e.message:'Travel routing failed.';
+      $('manualMilesWrap').classList.add('hidden');renderQuote();
+      $('routeMessage').textContent=routeError;$('quoteStatus').textContent=routeError;
+      return false;
+    }
   }
 
   function updateStep(){
@@ -202,12 +215,25 @@
     return true;
   }
 
-  $('nextBtn').addEventListener('click',()=>{if(!validateCurrentStep())return;if(step<6){step++;updateStep();window.scrollTo({top:document.querySelector('.wizard-shell').offsetTop-90,behavior:'smooth'})}});
+  $('nextBtn').addEventListener('click',async()=>{
+    if(!validateCurrentStep())return;
+    if(step===1){
+      const address=$('address').value.trim();
+      if(address!==lastRoutedAddress||!Number.isFinite(liveMiles)||!Number.isFinite(liveTravelSeconds)){
+        $('nextBtn').disabled=true;
+        const validRoute=await routeAddress();
+        $('nextBtn').disabled=false;
+        if(!validRoute)return;
+      }
+    }
+    if(step<6){step++;updateStep();window.scrollTo({top:document.querySelector('.wizard-shell').offsetTop-90,behavior:'smooth'})}
+  });
   $('backBtn').addEventListener('click',()=>{if(step>1){step--;updateStep();}});
   $('appointmentDate').min=isoDate(new Date());
   $('appointmentDate').addEventListener('change',()=>{populateTimes();renderQuote()});
   $('appointmentTime').addEventListener('change',renderQuote);
   $('address').addEventListener('blur',routeAddress);
+  $('address').addEventListener('input',()=>{liveMiles=null;liveTravelSeconds=null;lastRoutedAddress='';routeError='';$('routeMessage').textContent='';renderQuote()});
   $('manualMiles').addEventListener('input',renderQuote);
   $('signers').addEventListener('change',renderQuote);$('acts').addEventListener('change',renderQuote);
   $('documentType').addEventListener('change',()=>{$('loanWarning').classList.toggle('hidden',$('documentType').value!=='Mortgage / Closing-Related Document');renderQuote()});
