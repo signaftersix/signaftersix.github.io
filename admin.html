@@ -14,7 +14,7 @@
       <div class="eyebrow">Private dashboard</div><h1>Admin sign-in</h1>
       <p>Use the authorized Google business account, then complete the second-factor challenge. Customer files and appointment actions should never be accessible from a public link alone.</p>
       <button id="googleLogin" class="btn btn-primary">Continue with Google</button>
-      <p class="tiny-note">This screen is wired for Supabase Google OAuth + TOTP MFA after credentials are added.</p>
+      <p id="loginMessage" class="tiny-note">Only the authorized Sign After Six administrator account can continue.</p>
     </section>
     <section id="mfaPanel" class="admin-login hidden">
       <div class="eyebrow">Second step</div><h1>Verify it’s you</h1>
@@ -35,5 +35,5 @@
       <section class="admin-card audit-card"><div class="admin-card-head"><h2>Audit log</h2><span>Timestamped admin actions</span></div><div id="auditLog" class="empty-state">No live audit events until the backend is connected.</div></section>
     </section>
   </main>
-  <script src="config.js?v=20260917-1"></script><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="assets/admin.js?v=20260917-1"></script>
+  <script src="config.js?v=20260917-1"></script><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="assets/admin.js?v=20260917-2"></script>
 </body></html>
