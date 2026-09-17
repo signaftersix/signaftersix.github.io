@@ -22,6 +22,13 @@
   async function sync(){
     const {data:{session}}=await sb.auth.getSession();
     if(!session){login.classList.remove('hidden');mfa.classList.add('hidden');dash.classList.add('hidden');out.classList.add('hidden');return}
+    const {data:memberships,error:membershipError}=await sb.from('admin_users').select('user_id').eq('user_id',session.user.id).limit(1);
+    if(membershipError||!memberships?.length){
+      await sb.auth.signOut();
+      login.classList.remove('hidden');mfa.classList.add('hidden');dash.classList.add('hidden');out.classList.add('hidden');
+      $('loginMessage').textContent='Access denied. This Google account is not authorized for the Sign After Six admin dashboard.';
+      return;
+    }
     login.classList.add('hidden');out.classList.remove('hidden');
     const {data:aal}=await sb.auth.mfa.getAuthenticatorAssuranceLevel();
     if(aal?.currentLevel!=='aal2'){
@@ -42,7 +49,16 @@
     const {data,error}=await sb.auth.mfa.enroll({factorType:'totp',friendlyName:'Sign After Six Admin'});
     if(error){$('mfaMessage').textContent=error.message;return}
     factorId=data.id;
-    $('mfaSetup').innerHTML=`<p>Scan this QR code with your authenticator app, then enter the six-digit code below.</p><img src="${data.totp.qr_code}" alt="Authenticator QR code" style="max-width:220px;border-radius:12px">`;
+    const setup=$('mfaSetup');
+    setup.replaceChildren();
+    const instructions=document.createElement('p');
+    instructions.textContent='Scan this QR code with your authenticator app, then enter the six-digit code below.';
+    const qr=document.createElement('img');
+    qr.src=data.totp.qr_code;
+    qr.alt='Authenticator QR code';
+    qr.style.maxWidth='220px';
+    qr.style.borderRadius='12px';
+    setup.append(instructions,qr);
     $('enrollMfa').classList.add('hidden');$('mfaCodeWrap').classList.remove('hidden');$('verifyMfa').classList.remove('hidden');await makeChallenge();$('mfaMessage').textContent='';
   }
   async function makeChallenge(){if(!factorId)return;const {data,error}=await sb.auth.mfa.challenge({factorId});if(error){$('mfaMessage').textContent=error.message;return}challengeId=data.id}
