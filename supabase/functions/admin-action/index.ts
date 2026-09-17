@@ -1050,7 +1050,7 @@ Deno.serve(async (req) => {
 
       const acceptanceUrl =
         `${SITE_ORIGIN}/quote-review.html` +
-        `?request=${encodeURIComponent(
+        `#request=${encodeURIComponent(
           requestId,
         )}` +
         `&token=${encodeURIComponent(
