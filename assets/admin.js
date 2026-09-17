@@ -17,7 +17,17 @@
   $('enrollMfa').addEventListener('click',enrollMfa);
   $('verifyMfa').addEventListener('click',verifyMfa);
   $('statusFilter').addEventListener('change',renderRequestList);
-  $('blockAvailabilityBtn').addEventListener('click',blockAvailability);
+  document.querySelectorAll('.admin-stat').forEach(card=>card.addEventListener('click',()=>{
+    const filter=card.dataset.filter,active=card.classList.contains('active');
+    document.querySelectorAll('.admin-stat').forEach(x=>x.classList.remove('active'));
+    if(active){$('statusFilter').value='all';delete $('statusFilter').dataset.special;}
+    else if(filter==='today'){card.classList.add('active');$('statusFilter').value='all';$('statusFilter').dataset.special='today';}
+    else{card.classList.add('active');$('statusFilter').value=filter;delete $('statusFilter').dataset.special;}
+    renderRequestList();
+  }));
+  $('blockAvailabilityBtn').addEventListener('click',openAvailabilityCalendar);
+  $('availabilityForm').addEventListener('submit',blockAvailability);
+  $('blockAllDay').addEventListener('change',()=>{$('blockStart').disabled=$('blockEnd').disabled=$('blockAllDay').checked});
 
   async function sync(){
     const {data:{session}}=await sb.auth.getSession();
@@ -80,7 +90,8 @@
 
   function renderRequestList(){
     const status=$('statusFilter').value;
-    const rows=status==='all'?allRequests:allRequests.filter(r=>r.status===status);
+    const todayOnly=$('statusFilter').dataset.special==='today';
+    const rows=todayOnly?allRequests.filter(r=>new Date(r.appointment_at).toLocaleDateString()===new Date().toLocaleDateString()):status==='all'?allRequests:status==='pending'?allRequests.filter(r=>r.status==='pending'||r.status==='revised_quote'):allRequests.filter(r=>r.status===status);
     $('requestList').innerHTML=rows.map(r=>`<button class="request-row" data-id="${r.id}"><span><strong>${esc(r.customer_name)}</strong><br><small>${new Date(r.appointment_at).toLocaleString()}</small></span><span><span class="status-pill">${esc(r.status.replaceAll('_',' '))}</span><br><strong>$${Number(r.quote_total).toFixed(2)}</strong></span></button>`).join('')||'<p class="empty-state">No requests match this status.</p>';
     document.querySelectorAll('.request-row').forEach(b=>b.addEventListener('click',()=>openRequest(b.dataset.id)));
   }
@@ -161,6 +172,7 @@
       </div>`}
       ${completionNoteHtml}
       ${refundNoteHtml}
+      <div class="danger-zone"><h3>Delete request</h3><p class="tiny-note">Permanently removes this request and its uploaded documents. This does not issue a refund.</p><button id="deleteRequestBtn" class="btn btn-danger">Delete Request</button></div>
       <p id="actionMessage" class="tiny-note">${suggested==='approve'?'Approval link opened. Review everything before confirming.':suggested==='decline'?'Decline link opened. Review before confirming.':''}</p>`;
 
     $('approveBtn')?.addEventListener('click',()=>adminAction('approve',r));
@@ -170,6 +182,21 @@
     $('denyCancelBtn')?.addEventListener('click',()=>lifecycleAction('deny_cancellation'));
     $('approveRescheduleBtn')?.addEventListener('click',()=>lifecycleAction('approve_reschedule'));
     $('denyRescheduleBtn')?.addEventListener('click',()=>lifecycleAction('deny_reschedule'));
+    $('deleteRequestBtn')?.addEventListener('click',()=>deleteRequest(r));
+  }
+
+  async function deleteRequest(current){
+    const paid=current.payment_status==='paid'||Boolean(current.square_payment_id);
+    const warning=paid?'This request has a payment record. Deleting it will NOT issue a refund. Confirm only after any required Square refund is complete. Type DELETE to continue.':'This permanently deletes the request and all uploaded documents. Type DELETE to continue.';
+    if(prompt(warning)!=='DELETE')return;
+    $('actionMessage').textContent='Deleting request…';
+    const {data:{session}}=await sb.auth.getSession();
+    const response=await fetch(`${cfg.API_BASE_URL}/admin-lifecycle`,{method:'POST',headers:{Authorization:`Bearer ${session.access_token}`,'Content-Type':'application/json'},body:JSON.stringify({requestId:selectedId,action:'delete_request',confirmPaidDeletion:paid})});
+    const data=await response.json();
+    if(!response.ok){$('actionMessage').textContent=data.error||'Could not delete request.';return}
+    selectedId=null;history.replaceState({},'', 'admin.html');
+    $('requestDetail').innerHTML='<p class="empty-state">Request deleted. Choose another request to review.</p>';
+    await loadRequests();await loadAudit();
   }
 
   async function adminAction(action,current){
@@ -253,13 +280,29 @@
     if(response.ok){await loadRequests();await loadAudit();await openRequest(selectedId);if($('actionMessage'))$('actionMessage').textContent=resultMessage}
   }
 
-  async function blockAvailability(){
-    const startsAt=prompt('Unavailable start (example: 2026-09-20 18:00)');if(!startsAt)return;
-    const endsAt=prompt('Unavailable end (example: 2026-09-20 21:00)');if(!endsAt)return;
-    const reason=prompt('Reason shown only to you','Unavailable')||'Unavailable';
+  async function openAvailabilityCalendar(){
+    $('blockDate').min=new Date().toISOString().slice(0,10);$('blockDate').value=$('blockDate').value||new Date().toISOString().slice(0,10);$('blockStart').value=$('blockStart').value||'18:00';$('blockEnd').value=$('blockEnd').value||'19:00';
+    await loadAvailabilityBlocks();$('availabilityDialog').showModal();
+  }
+  async function loadAvailabilityBlocks(){
+    const {data,error}=await sb.from('availability_blocks').select('id,starts_at,ends_at,reason,source').eq('source','manual').order('starts_at',{ascending:true}).gte('ends_at',new Date().toISOString()).limit(100);
+    if(error){$('availabilityBlocks').textContent=error.message;return}
+    $('availabilityBlocks').innerHTML=(data||[]).map(b=>`<div class="block-row"><span><strong>${esc(new Date(b.starts_at).toLocaleString())}</strong><br>${esc(new Date(b.ends_at).toLocaleString())} · ${esc(b.reason||'Unavailable')}</span><button type="button" class="block-delete" data-id="${b.id}">Delete</button></div>`).join('')||'<p class="empty-state">No future manual blocks.</p>';
+    document.querySelectorAll('.block-delete').forEach(btn=>btn.addEventListener('click',()=>deleteAvailabilityBlock(btn.dataset.id)));
+  }
+  async function blockAvailability(event){
+    event.preventDefault();const date=$('blockDate').value;if(!date)return;
+    const weekend=[0,6].includes(new Date(`${date}T12:00:00`).getDay()),allDay=$('blockAllDay').checked;
+    const start=allDay?(weekend?'06:00':'18:00'):$('blockStart').value,end=allDay?'23:59':$('blockEnd').value;
+    const startsAt=new Date(`${date}T${start}`),endsAt=new Date(`${date}T${end}`),reason=$('blockReason').value||'Unavailable';
+    if(endsAt<=startsAt){$('blockMessage').textContent='End time must be after start time.';return}
     const {data:{session}}=await sb.auth.getSession();
-    const response=await fetch(`${cfg.API_BASE_URL}/admin-lifecycle`,{method:'POST',headers:{Authorization:`Bearer ${session.access_token}`,'Content-Type':'application/json'},body:JSON.stringify({action:'block_availability',startsAt:new Date(startsAt).toISOString(),endsAt:new Date(endsAt).toISOString(),reason})});
-    const data=await response.json();alert(data.message||data.error||'Finished.');if(response.ok)await loadAudit();
+    const response=await fetch(`${cfg.API_BASE_URL}/admin-lifecycle`,{method:'POST',headers:{Authorization:`Bearer ${session.access_token}`,'Content-Type':'application/json'},body:JSON.stringify({action:'block_availability',startsAt:startsAt.toISOString(),endsAt:endsAt.toISOString(),reason})});
+    const data=await response.json();$('blockMessage').textContent=data.message||data.error||'Finished.';if(response.ok){await loadAudit();await loadAvailabilityBlocks()}
+  }
+  async function deleteAvailabilityBlock(blockId){
+    if(!confirm('Delete this availability block?'))return;const {data:{session}}=await sb.auth.getSession();
+    const response=await fetch(`${cfg.API_BASE_URL}/admin-lifecycle`,{method:'POST',headers:{Authorization:`Bearer ${session.access_token}`,'Content-Type':'application/json'},body:JSON.stringify({action:'delete_availability_block',blockId})});const data=await response.json();$('blockMessage').textContent=data.message||data.error||'Finished.';if(response.ok){await loadAudit();await loadAvailabilityBlocks()}
   }
 
   function esc(s){return String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
