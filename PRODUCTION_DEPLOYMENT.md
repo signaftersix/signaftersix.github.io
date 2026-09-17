@@ -1,5 +1,15 @@
 # Sign After Six — Production Deployment
 
+## Upgrade deployment order — September 17, 2026
+
+1. Run `supabase/production-readiness-migration.sql` again. It is idempotent and adds the service-only management-link table.
+2. Deploy `create-request`, `notify-status`, `send-reminders`, `admin-lifecycle`, and `check-availability`.
+3. Replace the Apps Script mailer with `apps-script-mailer/Code.gs`, then deploy a new web-app version without changing its URL.
+4. Upload every root HTML file plus `assets/app.js` and `assets/admin.js` to GitHub Pages.
+5. Verify one new test request receives the same Manage Appointment link in its received, payment, confirmation, and reminder emails.
+
+The permanent Delete Request control removes uploads and database children and attempts to release calendar holds. It never issues a refund; paid records require an explicit warning confirmation.
+
 This package already contains the database migration, all Edge Functions, the
 customer cancellation/rescheduling page, the admin lifecycle controls, the
 private Mapbox routing proxy, notification templates, and final policy pages.
