@@ -122,6 +122,9 @@
       : isConfirmed&&!appointmentStarted
         ? `<p class="tiny-note">Mark Completed becomes available once the scheduled appointment start time arrives.</p>`
         : '';
+    const refundNoteHtml=r.refund_status&&r.refund_status!=='not_applicable'
+      ? `<div class="refund-notice"><strong>Refund status: ${esc(String(r.refund_status).replaceAll('_',' '))}</strong>${r.refund_amount!=null?`<br>Amount for review: $${Number(r.refund_amount).toFixed(2)}`:''}${r.refund_note?`<br>${esc(r.refund_note)}`:''}</div>`
+      : '';
 
     $('requestDetail').innerHTML=`
       <div class="detail-status"><span class="status-pill">${esc(r.status)}</span><strong>$${Number(r.quote_total).toFixed(2)}</strong></div>
@@ -141,6 +144,7 @@
         ${completeButtonHtml}
       </div>`}
       ${completionNoteHtml}
+      ${refundNoteHtml}
       <p id="actionMessage" class="tiny-note">${suggested==='approve'?'Approval link opened. Review everything before confirming.':suggested==='decline'?'Decline link opened. Review before confirming.':''}</p>`;
 
     $('approveBtn')?.addEventListener('click',()=>adminAction('approve',r));
@@ -227,8 +231,10 @@
     $('actionMessage').textContent='Saving...';
     const {data:{session}}=await sb.auth.getSession();
     const response=await fetch(`${cfg.API_BASE_URL}/admin-lifecycle`,{method:'POST',headers:{Authorization:`Bearer ${session.access_token}`,'Content-Type':'application/json'},body:JSON.stringify({requestId:selectedId,action,comment:$('adminComment')?.value||''})});
-    const data=await response.json();$('actionMessage').textContent=data.message||data.error||'Saved.';
-    if(response.ok){await loadRequests();await loadAudit();await openRequest(selectedId)}
+    const data=await response.json();
+    const resultMessage=data.message||data.error||'Saved.';
+    $('actionMessage').textContent=resultMessage;
+    if(response.ok){await loadRequests();await loadAudit();await openRequest(selectedId);if($('actionMessage'))$('actionMessage').textContent=resultMessage}
   }
 
   async function blockAvailability(){

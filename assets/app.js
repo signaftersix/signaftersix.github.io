@@ -166,7 +166,8 @@
     $('breakdownRows').innerHTML=q.lines.map(([label,val])=>`<div class="breakdown-row"><span>${escapeHtml(label)}</span><strong>${money(val)}</strong></div>`).join('');
     $('quoteStatus').textContent=q.manualReview?'Estimated • manual review required':'Estimated • pending document review';
     const doc=$('documentType').value||'document';
-    $('stickySummary').textContent=`${doc} • ${q.miles?q.miles.toFixed(1)+' mi':'travel pending'}`;
+    const travelSummary=routeError?'address not serviceable':Number.isFinite(q.miles)?`${q.miles.toFixed(1)} mi`:'travel pending';
+    $('stickySummary').textContent=`${doc} • ${travelSummary}`;
   }
 
   function escapeHtml(str){return String(str).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
