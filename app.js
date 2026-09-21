@@ -37,6 +37,7 @@
   let liveTravelSeconds = null;
   let lastRoutedAddress = '';
   let routeError = '';
+  let availabilityRun = 0;
 
   document.querySelector('.menu-btn')?.addEventListener('click', (e) => {
     const nav = $('site-nav');
@@ -76,22 +77,43 @@
   }
   function isWeekend(date){return date && (date.getDay()===0||date.getDay()===6)}
 
-  function populateTimes(){
+  async function populateTimes(){
     const date=parseLocalDate($('appointmentDate').value), select=$('appointmentTime');
     select.innerHTML='';
     if(!date){select.innerHTML='<option value="">Choose a date first</option>';return}
+    if(!Number.isFinite(liveTravelSeconds)){
+      select.innerHTML='<option value="">Verify the service address first</option>';
+      return;
+    }
     const allDayMajor=majorHoliday(date,12) && !((date.getMonth()+1===12)&&(date.getDate()===24||date.getDate()===31));
     const weekend=isWeekend(date), start=(allDayMajor||weekend)?6:18, end=24;
-    const frag=document.createDocumentFragment();
-    const placeholder=document.createElement('option');placeholder.value='';placeholder.textContent='Choose a preferred time';frag.appendChild(placeholder);
+    const candidates=[];
     for(let h=start;h<end;h++){
       for(const min of [0,30]){
         const value=`${String(h).padStart(2,'0')}:${String(min).padStart(2,'0')}`;
-        const option=document.createElement('option');option.value=value;
-        const hr12=h%12||12,ampm=h>=12?'PM':'AM';option.textContent=`${hr12}:${String(min).padStart(2,'0')} ${ampm}`;frag.appendChild(option);
+        const hr12=h%12||12,ampm=h>=12?'PM':'AM';
+        candidates.push({value,label:`${hr12}:${String(min).padStart(2,'0')} ${ampm}`});
       }
     }
-    select.appendChild(frag);
+    const run=++availabilityRun;
+    select.innerHTML='<option value="">Checking available times…</option>';select.disabled=true;
+    $('availabilityMessage').textContent='Checking appointments, travel time, and blocked availability…';
+    const checks=[];
+    for(let offset=0;offset<candidates.length;offset+=10){
+      const chunk=await Promise.all(candidates.slice(offset,offset+10).map(async slot=>{
+        const [y,m,d]=$('appointmentDate').value.split('-').map(Number),[hh,mm]=slot.value.split(':').map(Number);
+        const appointmentAt=new Date(y,m-1,d,hh,mm,0,0).toISOString();
+        try{const response=await fetch(`${CONFIG.API_BASE_URL}/check-availability`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({appointmentAt,durationMinutes:calcDuration(),travelSeconds:liveTravelSeconds})});const result=await response.json();return response.ok&&result.available?slot:null}catch{return null}
+      }));
+      checks.push(...chunk);
+      if(run!==availabilityRun)return;
+    }
+    if(run!==availabilityRun)return;
+    const available=checks.filter(Boolean),frag=document.createDocumentFragment();
+    const placeholder=document.createElement('option');placeholder.value='';placeholder.textContent=available.length?'Choose an available time':'No standard times are available';frag.appendChild(placeholder);
+    available.forEach(slot=>{const option=document.createElement('option');option.value=slot.value;option.textContent=slot.label;frag.appendChild(option)});
+    select.replaceChildren(frag);select.disabled=false;
+    $('availabilityMessage').textContent=available.length?`${available.length} available time${available.length===1?'':'s'} for this address and date.`:'No standard appointment times remain. Choose another date or request an emergency opening for manual review.';
   }
 
   function calcDuration(){
@@ -166,7 +188,8 @@
     $('breakdownRows').innerHTML=q.lines.map(([label,val])=>`<div class="breakdown-row"><span>${escapeHtml(label)}</span><strong>${money(val)}</strong></div>`).join('');
     $('quoteStatus').textContent=q.manualReview?'Estimated • manual review required':'Estimated • pending document review';
     const doc=$('documentType').value||'document';
-    $('stickySummary').textContent=`${doc} • ${q.miles?q.miles.toFixed(1)+' mi':'travel pending'}`;
+    const travelSummary=routeError?'address not serviceable':Number.isFinite(q.miles)?`${q.miles.toFixed(1)} mi`:'travel pending';
+    $('stickySummary').textContent=`${doc} • ${travelSummary}`;
   }
 
   function escapeHtml(str){return String(str).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
@@ -185,6 +208,8 @@
       lastRoutedAddress=address;
       $('manualMilesWrap').classList.add('hidden');
       $('routeMessage').textContent=`Verified: ${liveMiles.toFixed(1)} one-way driving miles.`;
+      $('appointmentDate').disabled=false;
+      if($('appointmentDate').value)await populateTimes();
       renderQuote();
       return true;
     }catch(e){
@@ -229,11 +254,11 @@
     if(step<6){step++;updateStep();window.scrollTo({top:document.querySelector('.wizard-shell').offsetTop-90,behavior:'smooth'})}
   });
   $('backBtn').addEventListener('click',()=>{if(step>1){step--;updateStep();}});
-  $('appointmentDate').min=isoDate(new Date());
-  $('appointmentDate').addEventListener('change',()=>{populateTimes();renderQuote()});
+  $('appointmentDate').min=isoDate(new Date());$('appointmentDate').disabled=true;
+  $('appointmentDate').addEventListener('change',async()=>{await populateTimes();renderQuote()});
   $('appointmentTime').addEventListener('change',renderQuote);
   $('address').addEventListener('blur',routeAddress);
-  $('address').addEventListener('input',()=>{liveMiles=null;liveTravelSeconds=null;lastRoutedAddress='';routeError='';$('routeMessage').textContent='';renderQuote()});
+  $('address').addEventListener('input',()=>{liveMiles=null;liveTravelSeconds=null;lastRoutedAddress='';routeError='';$('routeMessage').textContent='';$('appointmentDate').disabled=true;$('appointmentTime').innerHTML='<option value="">Verify the service address first</option>';renderQuote()});
   $('manualMiles').addEventListener('input',renderQuote);
   $('signers').addEventListener('change',renderQuote);$('acts').addEventListener('change',renderQuote);
   $('documentType').addEventListener('change',()=>{$('loanWarning').classList.toggle('hidden',$('documentType').value!=='Mortgage / Closing-Related Document');renderQuote()});

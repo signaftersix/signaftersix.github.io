@@ -1,0 +1,33 @@
+project_id = "sawmgfzkrhiepzyymwwr"
+
+# These functions perform their own authorization: exact-origin checks for
+# public forms, Google session + AAL2 for admin actions, service-role checks for
+# internal jobs, and Square signature verification for the webhook.
+[functions.create-request]
+verify_jwt = false
+[functions.check-availability]
+verify_jwt = false
+[functions.route-service-address]
+verify_jwt = false
+[functions.manage-request]
+verify_jwt = false
+[functions.accept-revised-quote]
+verify_jwt = false
+[functions.admin-action]
+verify_jwt = false
+[functions.admin-lifecycle]
+verify_jwt = false
+[functions.calendar-sync]
+verify_jwt = false
+[functions.notify-status]
+verify_jwt = false
+[functions.square-webhook]
+verify_jwt = false
+[functions.expire-pending]
+verify_jwt = false
+[functions.expire-awaiting-payment]
+verify_jwt = false
+[functions.send-reminders]
+verify_jwt = false
+[functions.cleanup-documents]
+verify_jwt = false

@@ -1,87 +1,54 @@
-const SITE_ORIGIN = Deno.env.get("PUBLIC_SITE_ORIGIN") || "https://signaftersix.github.io";
-
-function headers(origin: string | null) {
-  return {
-    "Access-Control-Allow-Origin": origin === SITE_ORIGIN ? SITE_ORIGIN : SITE_ORIGIN,
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Cache-Control": "no-store",
-    "Vary": "Origin",
-  };
-}
-
-function reply(body: unknown, status = 200, origin: string | null = SITE_ORIGIN) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...headers(origin), "Content-Type": "application/json" },
-  });
-}
+import { createClient } from "npm:@supabase/supabase-js@2";
+const SITE = Deno.env.get("PUBLIC_SITE_ORIGIN") || "https://signaftersix.github.io";
+const cors = { "Access-Control-Allow-Origin": SITE, "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS", "Cache-Control": "no-store" };
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
+async function sha256(value: string) { const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)); return [...new Uint8Array(digest)].map((x) => x.toString(16).padStart(2, "0")).join(""); }
 
 Deno.serve(async (req) => {
-  const origin = req.headers.get("origin");
-  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: headers(origin) });
-  if (req.method !== "POST") return reply({ error: "Method not allowed." }, 405, origin);
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-  const internal = serviceKey && req.headers.get("authorization") === `Bearer ${serviceKey}`;
-  if (origin !== SITE_ORIGIN && !internal) return reply({ error: "Origin not allowed." }, 403, origin);
-
+  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
+  if (req.method !== "POST") return json({ error: "Method not allowed." }, 405);
   try {
-    const token = Deno.env.get("MAPBOX_ACCESS_TOKEN");
-    const baseLat = Number(Deno.env.get("BUSINESS_BASE_LATITUDE"));
-    const baseLng = Number(Deno.env.get("BUSINESS_BASE_LONGITUDE"));
-    if (!token || !Number.isFinite(baseLat) || !Number.isFinite(baseLng)) {
-      return reply({ error: "Travel routing is not configured yet.", code: "ROUTING_NOT_CONFIGURED" }, 503, origin);
+    if (req.headers.get("origin") !== SITE) return json({ error: "Origin not allowed." }, 403);
+    const url = Deno.env.get("SUPABASE_URL")!, key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const squareToken = Deno.env.get("SQUARE_ACCESS_TOKEN")!, locationId = Deno.env.get("SQUARE_LOCATION_ID")!;
+    const environment = Deno.env.get("SQUARE_ENVIRONMENT") || "sandbox";
+    if (!url || !key || !squareToken || !locationId) throw new Error("Server payment configuration is incomplete.");
+    const body = await req.json(), requestId = String(body.requestId || ""), token = String(body.acceptanceToken || ""), action = String(body.action || "preview");
+    const service = createClient(url, key, { auth: { persistSession: false } });
+    const tokenHash = await sha256(token);
+    const { data: rows, error } = await service.from("appointment_requests").select("*").eq("id", requestId).eq("acceptance_token_hash", tokenHash).limit(1);
+    if (error) throw error;
+    const record = rows?.[0];
+    if (!record || record.status !== "revised_quote") return json({ error: "This revised-quote link is invalid or no longer active." }, 401);
+    if (!record.revised_quote_expires_at || new Date(record.revised_quote_expires_at) <= new Date()) return json({ error: "This revised quote has expired." }, 410);
+    const { data: revisions, error: revisionError } = await service.from("quote_revisions").select("*").eq("request_id", requestId).eq("version", record.quote_version).limit(1);
+    if (revisionError) throw revisionError;
+    const revision = revisions?.[0];
+    if (!revision) throw new Error("Revised quote record is missing.");
+    if (action === "preview") return json({ previousTotal: Number(revision.previous_total), revisedTotal: Number(revision.revised_total), expiresAt: revision.expires_at });
+    if (action === "decline") {
+      const { error: declineError } = await service.from("appointment_requests").update({ status: "declined", acceptance_token_hash: null }).eq("id", requestId).eq("status", "revised_quote");
+      if (declineError) throw declineError;
+      await service.from("audit_log").insert({ request_id: requestId, action: "revised_quote_declined_by_customer" });
+      await invoke(url, key, "calendar-sync", { requestId, event: "release" });
+      return json({ ok: true });
     }
-
-    const { address } = await req.json();
-    const value = String(address || "").trim();
-    if (value.length < 8 || value.length > 300) {
-      return reply({ error: "Enter a complete Florida service address." }, 400, origin);
-    }
-
-    const query = encodeURIComponent(value);
-    const geocodeUrl = `https://api.mapbox.com/search/geocode/v6/forward?q=${query}&country=US&region=FL&limit=1&proximity=${baseLng},${baseLat}&access_token=${encodeURIComponent(token)}`;
-    const geocode = await fetch(geocodeUrl);
-    const geocodeBody = await geocode.json();
-    const feature = geocodeBody?.features?.[0];
-    const coordinates = feature?.geometry?.coordinates;
-    if (!geocode.ok || !Array.isArray(coordinates) || coordinates.length < 2) {
-      return reply({ error: "That Florida address could not be located. Check it and try again.", code: "ADDRESS_NOT_FOUND" }, 422, origin);
-    }
-
-    const regionCode = String(
-      feature?.properties?.context?.region?.region_code ||
-      feature?.properties?.context?.region?.region_code_full ||
-      "",
-    ).toUpperCase();
-    if (regionCode !== "FL" && regionCode !== "US-FL") {
-      return reply({ error: "Online requests are limited to service addresses in Florida.", code: "OUTSIDE_FLORIDA" }, 422, origin);
-    }
-
-    const destinationLng = Number(coordinates[0]);
-    const destinationLat = Number(coordinates[1]);
-    const routeUrl = `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${baseLng},${baseLat};${destinationLng},${destinationLat}?overview=false&alternatives=false&access_token=${encodeURIComponent(token)}`;
-    const routeResponse = await fetch(routeUrl);
-    const routeBody = await routeResponse.json();
-    const route = routeBody?.routes?.[0];
-    if (!routeResponse.ok || !route || !Number.isFinite(route.distance) || !Number.isFinite(route.duration)) {
-      return reply({ error: "Driving time could not be calculated for that address.", code: "ROUTE_NOT_FOUND" }, 422, origin);
-    }
-
-    const miles = Math.round((Number(route.distance) / 1609.344) * 10) / 10;
-    const seconds = Math.max(60, Math.round(Number(route.duration)));
-    if (miles > 75) {
-      return reply({ error: "Online appointment requests are limited to 75 one-way miles.", code: "OUTSIDE_SERVICE_AREA", miles }, 422, origin);
-    }
-
-    return reply({
-      ok: true,
-      miles,
-      travelSeconds: seconds,
-      destination: feature.properties?.full_address || feature.place_name || value,
-    }, 200, origin);
+    if (action !== "accept") return json({ error: "Unsupported action." }, 400);
+    const squareBase = environment === "production" ? "https://connect.squareup.com" : "https://connect.squareupsandbox.com";
+    const squareResponse = await fetch(`${squareBase}/v2/online-checkout/payment-links`, { method: "POST", headers: { Authorization: `Bearer ${squareToken}`, "Content-Type": "application/json" }, body: JSON.stringify({ idempotency_key: `sas-revised-${requestId}-${record.quote_version}`, quick_pay: { name: "Sign After Six Mobile Notary", price_money: { amount: Math.round(Number(record.quote_total) * 100), currency: "USD" }, location_id: locationId }, description: `Sign After Six appointment ${requestId}`, checkout_options: { ask_for_shipping_address: false, merchant_support_email: "signaftersix@gmail.com", redirect_url: `${SITE}/quote-review.html?request=${encodeURIComponent(requestId)}&payment=return`, allow_tipping: false }, pre_populated_data: { buyer_email: record.customer_email } }) });
+    const square = await squareResponse.json();
+    if (!squareResponse.ok || !square?.payment_link?.url) throw new Error(square?.errors?.[0]?.detail || "Square could not create the payment link.");
+    const hoursAway = (new Date(record.appointment_at).getTime() - Date.now()) / 3600000;
+    const due = new Date(Date.now() + (hoursAway > 24 ? 4 * 3600000 : 3600000)).toISOString();
+    const { error: updateError } = await service.from("appointment_requests").update({ status: "awaiting_payment", acceptance_token_hash: null, square_payment_link_id: square.payment_link.id, square_payment_link_url: square.payment_link.url, square_order_id: square.payment_link.order_id || null, payment_status: "unpaid", payment_due_at: due }).eq("id", requestId).eq("status", "revised_quote");
+    if (updateError) throw updateError;
+    await service.from("quote_revisions").update({ accepted_at: new Date().toISOString() }).eq("id", revision.id);
+    await service.from("audit_log").insert({ request_id: requestId, action: "revised_quote_accepted_by_customer", details: { quote_total: Number(record.quote_total), payment_due_at: due } });
+    await invoke(url, key, "notify-status", { requestId, event: "payment_requested" });
+    return json({ ok: true, paymentUrl: square.payment_link.url, paymentDueAt: due });
   } catch (error) {
-    console.error("route-service-address error", error);
-    return reply({ error: "Travel routing is temporarily unavailable. Please try again.", code: "ROUTING_FAILED" }, 503, origin);
+    console.error("accept-revised-quote error", error);
+    return json({ error: error instanceof Error ? error.message : "Unable to process the revised quote." }, 400);
   }
 });
+async function invoke(url: string, key: string, name: string, body: unknown) { try { await fetch(`${url}/functions/v1/${name}`, { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify(body) }); } catch (error) { console.warn(`${name} failed`, error); } }

@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /admin.html
+Disallow: /manage-request.html
+Disallow: /quote-review.html
+
+Sitemap: https://signaftersix.github.io/sitemap.xml
